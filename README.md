@@ -13,7 +13,7 @@
 Configure aws sdk with the account to collect (~/.aws/credentials file)
 Run npm install
 ## Execution
-Run the script by runnig:
+Run the script by running: 
 node CollectUnusedSecurityGroup.js -p <aws_profile> -t <time_period> -i <interval_time>
 
 
