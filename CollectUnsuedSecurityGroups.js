@@ -1,5 +1,8 @@
 const AWS = require('aws-sdk');
 const fs = require('fs');
+const DEFAULT_TIME = 60;
+const DEFAULT_INTERVAL = 10;
+
 
 async function getAllSecurityGroupsInUse(region, sts) {
     AWS.config.region = region;
@@ -13,21 +16,34 @@ async function getAllSecurityGroupsInUse(region, sts) {
     await Promise.all([
         ec2.describeInstances().promise().then(resp => resp.Reservations).then(reservations => reservations.forEach(reservation => reservation.Instances
             .forEach(instance => {
-                instance.SecurityGroups.forEach(sg => used.push(sg.GroupId));
-                instance.NetworkInterfaces.forEach(ni => ni.Groups.forEach(nig => used.push(nig.GroupId)));
+                instance.SecurityGroups.forEach(sg => sg.groupId ? used.push({
+                    groupId: sg.GroupId,
+                    groupName: sg.GroupName
+                }) : null);
+                instance.NetworkInterfaces.forEach(ni => ni.Groups.forEach(nig => nig.groupdId ? used.push({
+                    groupId: nig.GroupId,
+                    groupName: nig.GroupName
+                }) : null));
             }))),
         ec2.describeVpcEndpoints().promise().then(response => response.VpcEndpoints.forEach(endpoint => endpoint.Groups
-            .forEach(group => used.push(group.GroupId)))),
+            .forEach(group => group.groupId ? used.push({groupId: group.GroupId, groupName: group.GroupName}) : null))),
         ec2.describeNetworkInterfaces().promise().then(result => result.NetworkInterfaces
-            .forEach(ni => ni.Groups.forEach(group => used.push(group.GroupId)))),
+            .forEach(ni => ni.Groups.forEach(group => group.groupId ? used.push({
+                groupId: group.GroupId,
+                groupName: group.GroupName
+            }) : null))),
         elb.describeLoadBalancers().promise().then(response => response.LoadBalancerDescriptions.forEach(elb => elb.SecurityGroups
-            .forEach(elbSecurityGroup => used.push(elbSecurityGroup)))),
+            .forEach(elbSecurityGroup => elbSecurityGroup ? used.push({
+                groupId: elbSecurityGroup.GroupId,
+                groupName: elbSecurityGroup.GroupName
+            }) : null))),
         alb.describeLoadBalancers().promise().then(response => response.LoadBalancers.forEach(alb => alb.SecurityGroups
-            .forEach(albSG => used.push(albSG)))),
+            .forEach(albSG => albSG ? used.push({groupId: albSG.GroupId, groupName: albSG.GroupName}) : null))),
         rds.describeDBSecurityGroups().promise().then(response => response.DBSecurityGroups.forEach(dbSecurityGroups => dbSecurityGroups.EC2SecurityGroups
-            .forEach(ec2SecurityGroup => used.push(ec2SecurityGroup.EC2SecurityGroupId)))),
-        ec2.describeVpcEndpoints({MaxResults: 1000}).promise().then(result => result.VpcEndpoints.forEach(endpoint => endpoint.Groups
-            .forEach(group => used.push(group.GroupId))))
+            .forEach(ec2SecurityGroup => ec2SecurityGroup.groupId ? used.push({
+                groupId: ec2SecurityGroup.GroupId,
+                groupName: ec2SecurityGroup.GroupName
+            }) : null)))
     ]).catch(error => Promise.reject(`Failed to get all security groups in use, ${error.message}`));
 
     return used;
@@ -37,7 +53,9 @@ async function getAllSecurityGroupsForRegion(region, sts) {
     AWS.config.region = region;
     const ec2 = sts ? new AWS.EC2(sts) : new AWS.EC2();
     return await ec2.describeSecurityGroups().promise().then(response => response.SecurityGroups)
-        .then(sg => sg.map(s => s.GroupId))
+        .then(sg => sg.map(s => (
+            {groupId: s.GroupId, groupName: s.GroupName})
+        ))
         .catch(error => Promise.reject(`Failed to describe security groups, ${error.message}`));
 }
 
@@ -56,9 +74,9 @@ function scanForUnusedSecurityGroups(regions, sts) {
     })).then(() => {
         const unusedGroupsNum = Object.values(unusedGroups).reduce((acc, regionalSecurityGroups) => acc + regionalSecurityGroups.length, 0);
 
-        console.log(`Found ${unusedGroupsNum} unused groups.${unusedGroupsNum > 0 ? ' Their IDs:' : ''}`);
+        console.log(`Found ${unusedGroupsNum} unused groups.${unusedGroupsNum > 0 ? ' Their IDs and Names:' : ''}`);
         Object.keys(unusedGroups).forEach(region => {
-            unusedGroups[region].forEach(sg => console.log(`${region}: ${sg}`));
+            unusedGroups[region].forEach(sg => console.log(`${region}: ID: ${sg.groupId}, Name: ${sg.groupName}`));
         });
 
         return unusedGroups;
@@ -104,7 +122,9 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const collectUnusedSecurityGroups = async (profile) => {
-    AWS.config.credentials = new AWS.SharedIniFileCredentials({profile: profile});
+    if (profile) {
+        AWS.config.credentials = new AWS.SharedIniFileCredentials({profile: profile});
+    }
     if (!AWS.config.region) {
         AWS.config.update({region: 'us-west-2'}); // Default region, just to get the available regions
     }
@@ -116,11 +136,16 @@ const collectUnusedSecurityGroups = async (profile) => {
             await Object.keys(unusedGroupsObject).forEach(async region => {
                 AWS.config.update({region: region});
                 ec2 = new AWS.EC2();
-                await unusedGroupsObject[region].forEach(async groupId => {
-                    unusedSgs.push({region, groupId});
+                await unusedGroupsObject[region].forEach(async sg => {
+                    unusedSgs.push({
+                        region: region,
+                        groupId: sg.groupId,
+                        groupName: sg.groupName
+                    });
                 });
             });
             setInterval(() => {
+                console.log("Re-sampling security groups...");
                 unusedSgs.forEach(async (sg) => {
                     const used = await getAllSecurityGroupsInUse(sg.region, null);
                     if (used.map(usedSg => usedSg.groupId).includes(sg.groupId)) {
@@ -132,19 +157,18 @@ const collectUnusedSecurityGroups = async (profile) => {
         });
 };
 
-if (profile) {
-    if (profile === "default") {
-        console.log('\nPlease replace the placeholder   default   with a profile from your AWS credentials file\n');
-        process.exit(1);
-    }
-    setTimeout(() => {
-        const unusedSgFilePath = `${process.env.PWD}/unused_security_groups.json`;
-        fs.writeFileSync(unusedSgFilePath, JSON.stringify(unusedSgs, null, 2) , 'utf-8');
-        console.log(`Unused security groups tracked for ${time} minuets at intervals of ${interval} minuets found at ${unusedSgFilePath} `)
-        process.exit(0);
-    }, time * 60 * 1000);
-
-    collectUnusedSecurityGroups(profile);
-} else {
-    console.log('\nPlease insert AWS profile from your AWS credentials file with -p flag\n');
+if (!time) {
+    time = DEFAULT_TIME;
 }
+if (!interval) {
+    interval = DEFAULT_INTERVAL;
+}
+setTimeout(() => {
+    const unusedSgFilePath = `${process.env.PWD}/unused_security_groups.json`;
+    fs.writeFileSync(unusedSgFilePath, JSON.stringify(unusedSgs, null, 2), 'utf-8');
+    console.log(`Unused security groups tracked for ${time} minuets at intervals of ${interval} minuets found at ${unusedSgFilePath} `)
+    process.exit(0);
+}, time * 60 * 1000);
+
+collectUnusedSecurityGroups(profile);
+
