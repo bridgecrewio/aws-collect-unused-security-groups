@@ -3,6 +3,11 @@ const fs = require('fs');
 const DEFAULT_TIME = 60;
 const DEFAULT_INTERVAL = 10;
 
+function removeDuplicates(myArr, prop) {
+    return myArr.filter((obj, pos, arr) => {
+        return arr.map(mapObj => mapObj[prop]).indexOf(obj[prop]) === pos;
+    });
+}
 
 async function getAllSecurityGroupsInUse(region, sts) {
     AWS.config.region = region;
@@ -16,36 +21,33 @@ async function getAllSecurityGroupsInUse(region, sts) {
     await Promise.all([
         ec2.describeInstances().promise().then(resp => resp.Reservations).then(reservations => reservations.forEach(reservation => reservation.Instances
             .forEach(instance => {
-                instance.SecurityGroups.forEach(sg => sg.groupId ? used.push({
+                instance.SecurityGroups.forEach(sg => sg.GroupId ? used.push({
                     groupId: sg.GroupId,
                     groupName: sg.GroupName
                 }) : null);
-                instance.NetworkInterfaces.forEach(ni => ni.Groups.forEach(nig => nig.groupdId ? used.push({
+                instance.NetworkInterfaces.forEach(ni => ni.Groups.forEach(nig => nig.GroupId ? used.push({
                     groupId: nig.GroupId,
                     groupName: nig.GroupName
                 }) : null));
             }))),
         ec2.describeVpcEndpoints().promise().then(response => response.VpcEndpoints.forEach(endpoint => endpoint.Groups
-            .forEach(group => group.groupId ? used.push({groupId: group.GroupId, groupName: group.GroupName}) : null))),
+            .forEach(group => group.GroupId ? used.push({groupId: group.GroupId, groupName: group.GroupName}) : null))),
         ec2.describeNetworkInterfaces().promise().then(result => result.NetworkInterfaces
-            .forEach(ni => ni.Groups.forEach(group => group.groupId ? used.push({
+            .forEach(ni => ni.Groups.forEach(group => group.GroupId ? used.push({
                 groupId: group.GroupId,
                 groupName: group.GroupName
             }) : null))),
         elb.describeLoadBalancers().promise().then(response => response.LoadBalancerDescriptions.forEach(elb => elb.SecurityGroups
-            .forEach(elbSecurityGroup => elbSecurityGroup ? used.push({
-                groupId: elbSecurityGroup.GroupId,
-                groupName: elbSecurityGroup.GroupName
-            }) : null))),
+            .forEach(elbSecurityGroup => used.push({groupId: elbSecurityGroup})))),
         alb.describeLoadBalancers().promise().then(response => response.LoadBalancers.forEach(alb => alb.SecurityGroups
-            .forEach(albSG => albSG ? used.push({groupId: albSG.GroupId, groupName: albSG.GroupName}) : null))),
+            .forEach(albSG => used.push({groupId: albSG})))),
         rds.describeDBSecurityGroups().promise().then(response => response.DBSecurityGroups.forEach(dbSecurityGroups => dbSecurityGroups.EC2SecurityGroups
-            .forEach(ec2SecurityGroup => ec2SecurityGroup.groupId ? used.push({
-                groupId: ec2SecurityGroup.GroupId,
-                groupName: ec2SecurityGroup.GroupName
+            .forEach(ec2SecurityGroup => ec2SecurityGroup.EC2SecurityGroupId ? used.push({
+                groupId: ec2SecurityGroup.EC2SecurityGroupId,
+                groupName: ec2SecurityGroup.EC2SecurityGroupName
             }) : null)))
     ]).catch(error => Promise.reject(`Failed to get all security groups in use, ${error.message}`));
-
+    used = removeDuplicates(used);
     return used;
 }
 
@@ -146,12 +148,19 @@ const collectUnusedSecurityGroups = async (profile) => {
             });
             setInterval(() => {
                 console.log("Re-sampling security groups...");
+                let usedSgs = {};
                 unusedSgs.forEach(async (sg) => {
-                    const used = await getAllSecurityGroupsInUse(sg.region, null);
-                    if (used.map(usedSg => usedSg.groupId).includes(sg.groupId)) {
-                        unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
-                        console.log(`Dropped ${sg.groupId} from unused security groups`);
+                    if (!usedSgs[sg.region]) {
+                        const usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
+                        if (usedSgsPerRegion.length > 0) {
+                            usedSgs[sg.region] = usedSgsPerRegion;
+                            if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
+                                unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
+                                console.log(`Dropped ${sg.groupId} from unused security groups`);
+                            }
+                        }
                     }
+
                 });
             }, interval * 60 * 1000);
         });
