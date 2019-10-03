@@ -16,7 +16,20 @@ Run the script by running:
 ```bash 
 node CollectUnusedSecurityGroup.js -p <aws_profile> -t <time_period> -i <interval_time> 
 ```
-
+Output example:
+`
+[
+  {
+    "region": "eu-central-1",
+    "groupId": "sg-id1"
+  },
+  {
+    "region": "us-west-2",
+    "groupId": "sg-id2"
+  },
+  ...
+]  
+`
 
 Note: Interval time units are in minuets
 
