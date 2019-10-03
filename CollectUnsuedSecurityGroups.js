@@ -155,17 +155,17 @@ const collectUnusedSecurityGroups = async (profile) => {
             setInterval(() => {
                 console.log("Re-sampling security groups...");
                 let usedSgs = {};
+                let usedSgsPerRegion;
                 unusedSgs.forEach(async (sg) => {
                     if (!usedSgs[sg.region]) {
-                        const usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
-                        if (usedSgsPerRegion.length > 0) {
-                            usedSgs[sg.region] = usedSgsPerRegion;
-                            if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
-                                unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
-                                console.log(`Dropped ${sg.groupId} from unused security groups`);
-                            }
-                        }
+                        usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
+                        usedSgs[sg.region] = usedSgsPerRegion;
                     }
+                    if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
+                        unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
+                        console.log(`Dropped ${sg.groupId} from unused security groups`);
+                    }
+
 
                 });
             }, interval * 60 * 1000);
