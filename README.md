@@ -16,7 +16,7 @@ Run the script by running:
 ```bash 
 node CollectUnusedSecurityGroup.js -p <aws_profile> -t <time_period> -i <interval_time> 
 ```
-Output example:
+Output example json containing unused security groups over the entire period:
 ```
 [
   {
