@@ -17,7 +17,7 @@ Run the script by running:
 node CollectUnusedSecurityGroup.js -p <aws_profile> -t <time_period> -i <interval_time> 
 ```
 Output example:
-`
+```
 [
   {
     "region": "eu-central-1",
@@ -29,7 +29,7 @@ Output example:
   },
   ...
 ]  
-`
+```
 
 Note: Interval time units are in minuets
 
