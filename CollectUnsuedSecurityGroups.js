@@ -4,9 +4,13 @@ const DEFAULT_TIME = 60;
 const DEFAULT_INTERVAL = 10;
 
 function removeDuplicates(myArr, prop) {
-    return myArr.filter((obj, pos, arr) => {
-        return arr.map(mapObj => mapObj[prop]).indexOf(obj[prop]) === pos;
-    });
+    let result = myArr.reduce((unique, o) => {
+        if (!unique.some(obj => obj[prop] === o[prop])) {
+            unique.push(o);
+        }
+        return unique;
+    }, []);
+    return result
 }
 
 async function getAllSecurityGroupsInUse(region, sts) {
@@ -47,7 +51,9 @@ async function getAllSecurityGroupsInUse(region, sts) {
                 groupName: ec2SecurityGroup.EC2SecurityGroupName
             }) : null)))
     ]).catch(error => Promise.reject(`Failed to get all security groups in use, ${error.message}`));
-    used = removeDuplicates(used);
+    if (used.length > 0) {
+        used = removeDuplicates(used, 'groupId');
+    }
     return used;
 }
 
