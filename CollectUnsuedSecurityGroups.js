@@ -63,7 +63,7 @@ async function getAllSecurityGroupsForRegion(region, sts) {
     return await ec2.describeSecurityGroups().promise().then(response => response.SecurityGroups)
         .then(sg => sg.map(s => (
             {groupId: s.GroupId, groupName: s.GroupName})
-        ).filter(grp => grp.groupName != 'default')) //filter out default VPC SG
+        ).filter(sg => sg.groupName != 'default')) //filter out default VPC SG
         .catch(error => Promise.reject(`Failed to describe security groups, ${error.message}`));
 }
 
