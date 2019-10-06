@@ -29,16 +29,23 @@ Running example:
 ```bash 
 node CollectUnusedSecurityGroup.js -p <aws_profile> -t <time_period> -i <interval_time> 
 ```
-Output example:
+Output example json containing unused security groups over the entire period:
 ```json
 [
-  {
-    "region": "eu-central-1",
-    "groupId": "sg-id1"
+{
+    "region": "us-east-1",
+    "groupId": "sg-111",
+    "groupName": "prod-rds"
   },
   {
-    "region": "us-west-2",
-    "groupId": "sg-id2"
+    "region": "us-east-1",
+    "groupId": "sg-2222",
+    "groupName": "k8s-elb"
+  },
+  {
+    "region": "us-east-1",
+    "groupId": "sg-333",
+    "groupName": "bastion-elb"
   },
   ...
 ]  
