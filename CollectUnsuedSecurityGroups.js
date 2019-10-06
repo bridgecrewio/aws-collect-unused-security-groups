@@ -141,10 +141,10 @@ const collectUnusedSecurityGroups = async (profile) => {
 
     scanForUnusedSecurityGroups(regions, null)
         .then(async unusedGroupsObject => {
-            await Object.keys(unusedGroupsObject).forEach(async region => {
-                AWS.config.update({region: region});
-                ec2 = new AWS.EC2();
-                await unusedGroupsObject[region].forEach(async sg => {
+            await Object.keys(unusedGroupsObject).forEach(region => {
+                // AWS.config.update({region: region});
+                // ec2 = new AWS.EC2();
+                unusedGroupsObject[region].forEach(sg => {
                     unusedSgs.push({
                         region: region,
                         groupId: sg.groupId,
