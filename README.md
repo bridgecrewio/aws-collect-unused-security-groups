@@ -16,14 +16,14 @@ Run the script with your default configured AWS profile by running:
 ```bash 
 node CollectUnusedSecurityGroup.js
 ```
-It will collect unused groups for one hour, and will re-sample the security groups for every 5 minuets. <br>
+It will collect unused groups for one hour, and will re-sample the security groups for every 5 minutes. <br>
 To change the sampling parameters, refer: <br>
  
 #### Parameters:
 ```
  -p / -profile - The AWS profile to be used, as defined in the AWS credentials file
- -t / -time - The amount of time to run the script (in minuets)
- -i / -interval - The time interval to sample the unused security groups (in minuets)
+ -t / -time - The amount of time to run the script (in minutes)
+ -i / -interval - The time interval to sample the unused security groups (in minutes)
 ```
 Running example: 
 ```bash 
@@ -51,7 +51,7 @@ Output example json containing unused security groups over the entire period:
 ]  
 ```
 
-Note: Interval time units are in minuets
+Note: Interval time units are in minutes
 
 ## Contact
 Created by [Bridgecrew](https://www.bridgecrew.io)
