@@ -30,7 +30,7 @@ Running example:
 node CollectUnusedSecurityGroup.js -p <aws_profile> -t <time_period> -i <interval_time> 
 ```
 Output example json containing unused security groups over the entire period:
-```json
+```
 [
 {
     "region": "us-east-1",
