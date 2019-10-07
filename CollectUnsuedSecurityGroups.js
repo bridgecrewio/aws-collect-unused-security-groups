@@ -78,6 +78,7 @@ function scanForUnusedSecurityGroups(regions, sts) {
 
 let args = process.argv.slice(2, process.argv.length);
 let profile, time, interval;
+let verbose = false;
 let unusedSgs = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -97,6 +98,10 @@ for (let i = 0; i < args.length; i++) {
             interval = args[i + 1];
             i += 1;
             continue;
+        case "-v":
+        case "-verbose":
+            verbose = true;
+            continue;
         case "-h":
         case "help":
         case "-help":
@@ -104,9 +109,10 @@ for (let i = 0; i < args.length; i++) {
                 `To launch it, supply the as set in your AWS credentials file, as such:\n` +
                 `node CollectUnusedSecurityGroups.js\n` +
                 `Parameters: \n-p / -profile\tThe AWS profile to be used, as defined in the AWS credentials file\n` +
-                `-t / -time \\tThe amount of time to run the script (in minuets)\\n` +
-                `-i / -interval\\tThe time interval to sample the unused security groups (in minuets)\\n` +
-                `Example:\n node CollectUnusedSecurityGroup.js -p dev -t 60 -i 5\n`);
+                `-t / -time \tThe amount of time to run the script (in minutes)\n` +
+                `-i / -interval\tThe time interval to sample the unused security groups (in minutes)\n` +
+                `-v / -verbose\tIf set, print the current list of unused SGs after each interval\n` +
+                `Example:\n node CollectUnusedSecurityGroup.js -p dev -t 60 -i 5 -v\n`);
             return;
         default:
             console.error("Bad params\n");
@@ -151,6 +157,11 @@ const collectUnusedSecurityGroups = async (profile) => {
                         console.log(`Dropped ${sg.groupId} from unused security groups`);
                     }
                 });
+
+                if (verbose) {
+                    console.log("Current list of unused SGs:")
+                    console.log(unusedSgs);
+                }
             }, interval * 60 * 1000);
         });
 };
@@ -164,7 +175,7 @@ if (!interval) {
 setTimeout(() => {
     const unusedSgFilePath = `${process.env.PWD}/unused_security_groups.json`;
     fs.writeFileSync(unusedSgFilePath, JSON.stringify(unusedSgs, null, 2), 'utf-8');
-    console.log(`Unused security groups tracked for ${time} minuets at intervals of ${interval} minuets found at ${unusedSgFilePath} `)
+    console.log(`Unused security groups tracked for ${time} minutes at intervals of ${interval} minutes found at ${unusedSgFilePath} `)
     process.exit(0);
 }, time * 60 * 1000);
 
