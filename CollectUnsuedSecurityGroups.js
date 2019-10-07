@@ -162,26 +162,20 @@ const collectUnusedSecurityGroups = async (profile) => {
                 console.log("Re-sampling security groups...");
                 let usedSgs = {};
                 let usedSgsPerRegion;
-
-                let requests = unusedSgs.reduce((promiseChain, sg) => {
-                    return promiseChain.then(() => new Promise(async (resolve) => {
-                            if (!usedSgs[sg.region]) {
-                            usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
-                            usedSgs[sg.region] = usedSgsPerRegion;
-                        }
-                        if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
-                            unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
-                            console.log(`Dropped ${sg.groupId} from unused security groups`);
-                        }
-                        resolve();
-                    }));
-                }, Promise.resolve());
+                unusedSgs.forEach(async (sg) => {
+                    if (!usedSgs[sg.region]) {
+                        usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
+                        usedSgs[sg.region] = usedSgsPerRegion;
+                    }
+                    if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
+                        unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
+                        console.log(`Dropped ${sg.groupId} from unused security groups`);
+                    }
+                });
 
                 if (verbose) {
-                    requests.then(() => {
-                        console.log("Current list of unused SGs:")
-                        console.log(unusedSgs);
-                    });
+                    console.log("Current list of unused SGs:")
+                    console.log(unusedSgs);
                 }
             }, interval * 60 * 1000);
         });
