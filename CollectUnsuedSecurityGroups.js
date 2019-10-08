@@ -46,9 +46,13 @@ async function getAllSecurityGroupsForRegion(region, sts) {
     AWS.config.region = region;
     const ec2 = sts ? new AWS.EC2(sts) : new AWS.EC2();
     return await ec2.describeSecurityGroups().promise().then(response => response.SecurityGroups)
-        .then(sg => sg.map(s => (
-            {groupId: s.GroupId, groupName: s.GroupName})
-        ).filter(sg => sg.groupName != 'default')) //filter out default VPC SG
+        .then(sg => {
+            let sg_list = sg.map(s => ({groupId: s.GroupId, groupName: s.GroupName}));
+            if (filterDefaultVpcGroups) {
+                sg_list = sg_list.filter(sg => sg.groupName != 'default');
+            }
+            return sg_list;
+        })
         .catch(error => Promise.reject(`Failed to describe security groups, ${error.message}`));
 }
 
@@ -79,6 +83,7 @@ function scanForUnusedSecurityGroups(regions, sts) {
 let args = process.argv.slice(2, process.argv.length);
 let profile, time, interval;
 let verbose = false;
+let filterDefaultVpcGroups = false;
 let unusedSgs = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -102,6 +107,9 @@ for (let i = 0; i < args.length; i++) {
         case "-verbose":
             verbose = true;
             continue;
+        case "--no-default":
+            filterDefaultVpcGroups = true;
+            continue;
         case "-h":
         case "help":
         case "-help":
@@ -112,7 +120,8 @@ for (let i = 0; i < args.length; i++) {
                 `-t / -time \tThe amount of time to run the script (in minutes)\n` +
                 `-i / -interval\tThe time interval to sample the unused security groups (in minutes)\n` +
                 `-v / -verbose\tIf set, print the current list of unused SGs after each interval\n` +
-                `Example:\n node CollectUnusedSecurityGroup.js -p dev -t 60 -i 5 -v\n`);
+                `--no-default\tSkip groups named 'default', which are typically default VPC security groups, and can't be deleted\n`+
+                `Example:\n node CollectUnusedSecurityGroup.js -p dev -t 60 -i 5 -v --no-default\n`);
             return;
         default:
             console.error("Bad params\n");
@@ -128,7 +137,7 @@ const collectUnusedSecurityGroups = async (profile) => {
         AWS.config.update({region: 'us-west-2'}); // Default region, just to get the available regions
     }
     let ec2 = new AWS.EC2();
-    const regions = await ec2.describeRegions().promise().then(response => response.Regions.map(reg => reg.RegionName));
+    const regions = ['us-east-1'];// await ec2.describeRegions().promise().then(response => response.Regions.map(reg => reg.RegionName));
 
     scanForUnusedSecurityGroups(regions, null)
         .then(async unusedGroupsObject => {
@@ -147,20 +156,32 @@ const collectUnusedSecurityGroups = async (profile) => {
                 console.log("Re-sampling security groups...");
                 let usedSgs = {};
                 let usedSgsPerRegion;
-                unusedSgs.forEach(async (sg) => {
-                    if (!usedSgs[sg.region]) {
-                        usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
-                        usedSgs[sg.region] = usedSgsPerRegion;
-                    }
-                    if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
-                        unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
-                        console.log(`Dropped ${sg.groupId} from unused security groups`);
-                    }
-                });
+
+                // This structure ensures that the unused SGs are dropped BEFORE
+                // printing the output after each interval. Because getAllSecurityGroupsInUse
+                // is asynchronous, we have to wait until it, and the subsequent map / drop logic,
+                // is finished before we print the latest list of unused SGs. Otherwise, the
+                // unused SGs will be printed based on their state BEFORE this interval, and will
+                // always be one iteration behind.
+                let requests = unusedSgs.reduce((promiseChain, sg) => {
+                    return promiseChain.then(() => new Promise(async (resolve) => {
+                            if (!usedSgs[sg.region]) {
+                            usedSgsPerRegion = await getAllSecurityGroupsInUse(sg.region, null);
+                            usedSgs[sg.region] = usedSgsPerRegion;
+                        }
+                        if (usedSgs[sg.region].map(usedSg => usedSg.groupId).includes(sg.groupId)) {
+                            unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
+                            console.log(`Dropped ${sg.groupId} from unused security groups`);
+                        }
+                        resolve();
+                    }));
+                }, Promise.resolve());
 
                 if (verbose) {
-                    console.log("Current list of unused SGs:")
-                    console.log(unusedSgs);
+                    requests.then(() => {
+                        console.log("Current list of unused SGs:")
+                        console.log(unusedSgs);
+                    });
                 }
             }, interval * 60 * 1000);
         });
