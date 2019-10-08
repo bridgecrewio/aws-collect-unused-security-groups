@@ -3,14 +3,9 @@ const fs = require('fs');
 const DEFAULT_TIME = 60;
 const DEFAULT_INTERVAL = 10;
 
-function removeDuplicates(myArr, prop) {
-    let result = myArr.reduce((unique, o) => {
-        if (!unique.some(obj => obj[prop] === o[prop])) {
-            unique.push(o);
-        }
-        return unique;
-    }, []);
-    return result
+function removeDuplicates(myArr) {
+    const uniq = new Set(myArr.map(e => JSON.stringify(e)));
+    return Array.from(uniq).map(e => JSON.parse(e));
 }
 
 async function getAllSecurityGroupsInUse(region, sts) {
@@ -25,34 +20,24 @@ async function getAllSecurityGroupsInUse(region, sts) {
     await Promise.all([
         ec2.describeInstances().promise().then(resp => resp.Reservations).then(reservations => reservations.forEach(reservation => reservation.Instances
             .forEach(instance => {
-                instance.SecurityGroups.forEach(sg => sg.GroupId ? used.push({
-                    groupId: sg.GroupId,
-                    groupName: sg.GroupName
-                }) : null);
-                instance.NetworkInterfaces.forEach(ni => ni.Groups.forEach(nig => nig.GroupId ? used.push({
-                    groupId: nig.GroupId,
-                    groupName: nig.GroupName
-                }) : null));
+                instance.SecurityGroups.forEach(sg => used.push({groupId: sg.GroupId}));
+                instance.NetworkInterfaces.forEach(ni => ni.Groups.forEach(nig => used.push({groupId: nig.GroupId})));
             }))),
         ec2.describeVpcEndpoints().promise().then(response => response.VpcEndpoints.forEach(endpoint => endpoint.Groups
-            .forEach(group => group.GroupId ? used.push({groupId: group.GroupId, groupName: group.GroupName}) : null))),
+            .forEach(group => used.push({groupId: group.GroupId})))),
         ec2.describeNetworkInterfaces().promise().then(result => result.NetworkInterfaces
-            .forEach(ni => ni.Groups.forEach(group => group.GroupId ? used.push({
-                groupId: group.GroupId,
-                groupName: group.GroupName
-            }) : null))),
+            .forEach(ni => ni.Groups.forEach(group => used.push({groupId: group.GroupId})))),
         elb.describeLoadBalancers().promise().then(response => response.LoadBalancerDescriptions.forEach(elb => elb.SecurityGroups
             .forEach(elbSecurityGroup => used.push({groupId: elbSecurityGroup})))),
         alb.describeLoadBalancers().promise().then(response => response.LoadBalancers.forEach(alb => alb.SecurityGroups
             .forEach(albSG => used.push({groupId: albSG})))),
         rds.describeDBSecurityGroups().promise().then(response => response.DBSecurityGroups.forEach(dbSecurityGroups => dbSecurityGroups.EC2SecurityGroups
-            .forEach(ec2SecurityGroup => ec2SecurityGroup.EC2SecurityGroupId ? used.push({
-                groupId: ec2SecurityGroup.EC2SecurityGroupId,
-                groupName: ec2SecurityGroup.EC2SecurityGroupName
-            }) : null)))
+            .forEach(ec2SecurityGroup => used.push({
+                groupId: ec2SecurityGroup.EC2SecurityGroupId
+            }))))
     ]).catch(error => Promise.reject(`Failed to get all security groups in use, ${error.message}`));
     if (used.length > 0) {
-        used = removeDuplicates(used, 'groupId');
+        used = removeDuplicates(used);
     }
     return used;
 }
@@ -93,6 +78,7 @@ function scanForUnusedSecurityGroups(regions, sts) {
 
 let args = process.argv.slice(2, process.argv.length);
 let profile, time, interval;
+let verbose = false;
 let unusedSgs = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -112,6 +98,10 @@ for (let i = 0; i < args.length; i++) {
             interval = args[i + 1];
             i += 1;
             continue;
+        case "-v":
+        case "-verbose":
+            verbose = true;
+            continue;
         case "-h":
         case "help":
         case "-help":
@@ -119,9 +109,10 @@ for (let i = 0; i < args.length; i++) {
                 `To launch it, supply the as set in your AWS credentials file, as such:\n` +
                 `node CollectUnusedSecurityGroups.js\n` +
                 `Parameters: \n-p / -profile\tThe AWS profile to be used, as defined in the AWS credentials file\n` +
-                `-t / -time \\tThe amount of time to run the script (in minuets)\\n` +
-                `-i / -interval\\tThe time interval to sample the unused security groups (in minuets)\\n` +
-                `Example:\n node CollectUnusedSecurityGroup.js -p dev -t 60 -i 5\n`);
+                `-t / -time \tThe amount of time to run the script (in minutes)\n` +
+                `-i / -interval\tThe time interval to sample the unused security groups (in minutes)\n` +
+                `-v / -verbose\tIf set, print the current list of unused SGs after each interval\n` +
+                `Example:\n node CollectUnusedSecurityGroup.js -p dev -t 60 -i 5 -v\n`);
             return;
         default:
             console.error("Bad params\n");
@@ -141,10 +132,10 @@ const collectUnusedSecurityGroups = async (profile) => {
 
     scanForUnusedSecurityGroups(regions, null)
         .then(async unusedGroupsObject => {
-            await Object.keys(unusedGroupsObject).forEach(async region => {
-                AWS.config.update({region: region});
-                ec2 = new AWS.EC2();
-                await unusedGroupsObject[region].forEach(async sg => {
+            await Object.keys(unusedGroupsObject).forEach(region => {
+                // AWS.config.update({region: region});
+                // ec2 = new AWS.EC2();
+                unusedGroupsObject[region].forEach(sg => {
                     unusedSgs.push({
                         region: region,
                         groupId: sg.groupId,
@@ -165,9 +156,12 @@ const collectUnusedSecurityGroups = async (profile) => {
                         unusedSgs = unusedSgs.filter(x => x.groupId !== sg.groupId);
                         console.log(`Dropped ${sg.groupId} from unused security groups`);
                     }
-
-
                 });
+
+                if (verbose) {
+                    console.log("Current list of unused SGs:")
+                    console.log(unusedSgs);
+                }
             }, interval * 60 * 1000);
         });
 };
@@ -181,9 +175,12 @@ if (!interval) {
 setTimeout(() => {
     const unusedSgFilePath = `${process.env.PWD}/unused_security_groups.json`;
     fs.writeFileSync(unusedSgFilePath, JSON.stringify(unusedSgs, null, 2), 'utf-8');
-    console.log(`Unused security groups tracked for ${time} minuets at intervals of ${interval} minuets found at ${unusedSgFilePath} `)
+    console.log(`Unused security groups tracked for ${time} minutes at intervals of ${interval} minutes found at ${unusedSgFilePath} `)
     process.exit(0);
 }, time * 60 * 1000);
 
-collectUnusedSecurityGroups(profile);
+collectUnusedSecurityGroups(profile).catch(error => {
+    console.log(`Failed to collect security groups:\n ${error.message}`);
+    process.exit(1);
+});
 
