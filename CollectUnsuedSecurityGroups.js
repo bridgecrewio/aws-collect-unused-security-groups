@@ -137,7 +137,7 @@ const collectUnusedSecurityGroups = async (profile) => {
         AWS.config.update({region: 'us-west-2'}); // Default region, just to get the available regions
     }
     let ec2 = new AWS.EC2();
-    const regions = ['us-east-1'];// await ec2.describeRegions().promise().then(response => response.Regions.map(reg => reg.RegionName));
+    const regions = await ec2.describeRegions().promise().then(response => response.Regions.map(reg => reg.RegionName));
 
     scanForUnusedSecurityGroups(regions, null)
         .then(async unusedGroupsObject => {
