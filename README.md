@@ -21,9 +21,10 @@ To change the sampling parameters, refer: <br>
  
 #### Parameters:
 ```
- -p / -profile - The AWS profile to be used, as defined in the AWS credentials file
- -t / -time - The amount of time to run the script (in minutes)
- -i / -interval - The time interval to sample the unused security groups (in minutes)
+ -p / -profile      The AWS profile to be used, as defined in the AWS credentials file
+ -t / -time         The amount of time to run the script (in minutes)
+ -i / -interval     The time interval to sample the unused security groups (in minutes)
+ --no-default	    Skip groups named 'default', which are typically default VPC security groups, and can't be deleted
 ```
 Running example: 
 ```bash 
