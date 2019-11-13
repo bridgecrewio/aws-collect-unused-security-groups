@@ -14,6 +14,7 @@ async function getAllSecurityGroupsInUse(region, sts) {
     const elb = sts ? new AWS.ELB(sts) : new AWS.ELB();
     const alb = sts ? new AWS.ELBv2(sts) : new AWS.ELBv2();
     const rds = sts ? new AWS.RDS(sts) : new AWS.RDS();
+    const lambda = sts ? new AWS.Lambda(sts) : new AWS.Lambda();
 
     let used = [];
 
@@ -34,7 +35,13 @@ async function getAllSecurityGroupsInUse(region, sts) {
         rds.describeDBSecurityGroups().promise().then(response => response.DBSecurityGroups.forEach(dbSecurityGroups => dbSecurityGroups.EC2SecurityGroups
             .forEach(ec2SecurityGroup => used.push({
                 groupId: ec2SecurityGroup.EC2SecurityGroupId
-            }))))
+            })))),
+        lambda.listFunctions().promise().then(response => response.Functions.forEach(func => 
+            func.VpcConfig.SecurityGroupIds.forEach(group => 
+                used.push({groupId: group})
+            )
+        ))
+
     ]).catch(error => Promise.reject(`Failed to get all security groups in use, ${error.message}`));
     if (used.length > 0) {
         used = removeDuplicates(used);
