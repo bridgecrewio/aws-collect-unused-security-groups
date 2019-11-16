@@ -33,13 +33,9 @@ async function getAllSecurityGroupsInUse(region, sts) {
         alb.describeLoadBalancers().promise().then(response => response.LoadBalancers.forEach(alb => alb.SecurityGroups
             .forEach(albSG => used.push({groupId: albSG})))),
         rds.describeDBSecurityGroups().promise().then(response => response.DBSecurityGroups.forEach(dbSecurityGroups => dbSecurityGroups.EC2SecurityGroups
-            .forEach(ec2SecurityGroup => used.push({
-                groupId: ec2SecurityGroup.EC2SecurityGroupId
-            })))),
-        lambda.listFunctions().promise().then(response => response.Functions.forEach(func => 
-            func.VpcConfig.SecurityGroupIds.forEach(group => 
-                used.push({groupId: group})
-            )
+            .forEach(ec2SecurityGroup => used.push({groupId: ec2SecurityGroup.EC2SecurityGroupId})))),
+        lambda.listFunctions().promise().then(response => response.Functions.filter(func => func.VpcConfig).forEach(func =>
+            func.VpcConfig.SecurityGroupIds.forEach(group => used.push({groupId: group}))
         ))
 
     ]).catch(error => Promise.reject(`Failed to get all security groups in use, ${error.message}`));
